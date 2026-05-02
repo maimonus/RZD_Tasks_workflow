@@ -1,0 +1,238 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --rzd-red: #d22630;
+  --rzd-red-dark: #b4202a;
+  --rzd-red-deep: #95141d;
+  --rzd-red-soft: #fbe8ea;
+  --rzd-red-line: #f1c9cd;
+  --rzd-paper: #fbf7f4;
+  --rzd-surface: #f4eeea;
+  --rzd-surface-strong: #ebe1dc;
+  --rzd-border: #decfc8;
+  --rzd-ink: #231815;
+  --rzd-muted: #6f625f;
+  --font-sans: Verdana, Geneva, sans-serif;
+  --font-display: 'RussianRail G Pro', 'FSRailway', Verdana, Geneva, sans-serif;
+}
+
+html {
+  background: #f7f2ef;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(circle at top right, rgba(210, 38, 48, 0.1), transparent 28%),
+    linear-gradient(180deg, #f9f4f1 0%, #f3ece8 100%);
+  color: var(--rzd-ink);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3,
+.font-serif {
+  font-family: var(--font-display) !important;
+}
+
+::selection {
+  background: rgba(210, 38, 48, 0.16);
+  color: var(--rzd-ink);
+}
+
+body::-webkit-scrollbar {
+  width: 10px;
+}
+
+body::-webkit-scrollbar-thumb {
+  background: #c79c9f;
+  border-radius: 9999px;
+}
+
+.bg-slate-50 {
+  background-color: var(--rzd-paper) !important;
+}
+
+.bg-slate-50\/60 {
+  background-color: rgba(251, 247, 244, 0.72) !important;
+}
+
+.bg-slate-50\/70 {
+  background-color: rgba(251, 247, 244, 0.72) !important;
+}
+
+/* Унификация подложек для bg-slate-50/* */
+.bg-slate-50\/80 {
+  background-color: rgba(251, 247, 244, 0.72) !important;
+}
+
+.bg-slate-50\/90 {
+  background-color: rgba(251, 247, 244, 0.72) !important;
+}
+
+.bg-slate-100 {
+  background-color: var(--rzd-surface-strong) !important;
+}
+
+.bg-slate-800 {
+  background-color: var(--rzd-red-dark) !important;
+}
+
+.bg-slate-950 {
+  background-color: var(--rzd-red) !important;
+}
+
+.bg-slate-950\/60 {
+  background-color: rgba(149, 20, 29, 0.6) !important;
+}
+
+.text-slate-100 {
+  color: #fff7f7 !important;
+}
+
+.text-slate-300 {
+  color: #f3d6d8 !important;
+}
+
+.text-slate-400 {
+  color: #998a86 !important;
+}
+
+.text-slate-500 {
+  color: var(--rzd-muted) !important;
+}
+
+.text-slate-600 {
+  color: #625451 !important;
+}
+
+.text-slate-700 {
+  color: #4e403d !important;
+}
+
+.text-slate-900 {
+  color: var(--rzd-ink) !important;
+}
+
+.text-red-600 {
+  color: var(--rzd-red) !important;
+}
+
+.text-sky-100 {
+  color: #fff1f2 !important;
+}
+
+.text-sky-200 {
+  color: #ffe8ea !important;
+}
+
+.text-sky-300 {
+  color: #ffd9dc !important;
+}
+
+.text-sky-700 {
+  color: var(--rzd-red-deep) !important;
+}
+
+.bg-sky-50 {
+  background-color: var(--rzd-red-soft) !important;
+}
+
+.bg-sky-50\/90 {
+  background-color: rgba(251, 232, 234, 0.9) !important;
+}
+
+.bg-sky-600 {
+  background-color: var(--rzd-red) !important;
+}
+
+.border-slate-100 {
+  border-color: #efe4df !important;
+}
+
+.border-slate-200 {
+  border-color: var(--rzd-border) !important;
+}
+
+.border-sky-200 {
+  border-color: var(--rzd-red-line) !important;
+}
+
+.focus\:border-sky-400:focus {
+  border-color: var(--rzd-red) !important;
+  box-shadow: 0 0 0 3px rgba(210, 38, 48, 0.12);
+}
+
+.ring-sky-200 {
+  --tw-ring-color: rgba(210, 38, 48, 0.18) !important;
+}
+
+.ring-sky-300 {
+  --tw-ring-color: rgba(210, 38, 48, 0.28) !important;
+}
+
+.hover\:bg-slate-50:hover {
+  background-color: #f7efeb !important;
+}
+
+.hover\:bg-slate-800:hover {
+  background-color: var(--rzd-red-deep) !important;
+}
+
+.hover\:bg-sky-500:hover {
+  background-color: var(--rzd-red-dark) !important;
+}
+
+.hover\:text-sky-500:hover {
+  color: var(--rzd-red) !important;
+}
+
+.disabled\:bg-slate-100:disabled {
+  background-color: var(--rzd-surface-strong) !important;
+}
+
+.disabled\:bg-slate-400:disabled {
+  background-color: #d9a0a5 !important;
+}
+
+.disabled\:bg-sky-300:disabled {
+  background-color: #e7a0a6 !important;
+}
+
+/* Унификация скруглений "плашек" */
+.rounded-2xl {
+  border-radius: 2rem !important;
+}
+
+.rounded-3xl {
+  border-radius: 2rem !important;
+}
+
+.rounded-\[1\.5rem\] {
+  border-radius: 2rem !important;
+}
+
+.rounded-\[2rem\] {
+  border-radius: 2rem !important;
+}
+
+.rounded-\[2\.25rem\] {
+  border-radius: 2rem !important;
+}

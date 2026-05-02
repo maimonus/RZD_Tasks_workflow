@@ -1,0 +1,31 @@
+__pycache__/
+node_modules/
+.env
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite
+/dist
+/build
+.DS_Store
+.idea/
+.vscode/
+frontend/dist/
+
+# Runtime / logs
+backend/logs/*.log
+
+# Generated build/typecheck artifacts (root)
+tsc_out*.txt
+tsc_errors*.txt
+vite_build_out*.txt
+
+# Generated build/typecheck artifacts (frontend)
+frontend/tsc_*.txt
+frontend/vite_build*.txt
+frontend/vite*.txt
+frontend/vite_build_log.txt
+
+# Local tmp / smoke/test outputs
+tmp/
