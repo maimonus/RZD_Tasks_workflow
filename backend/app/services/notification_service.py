@@ -164,7 +164,16 @@ class NotificationService:
         *,
         task: models.Task,
         now: Optional[datetime] = None,
+        receiver_user_ids_override: Optional[list[int]] = None,
     ) -> Optional[models.Notification]:
+        """
+        Уведомляем о необходимости принять задачу:
+        - назначенному ответственному (task.owner_id)
+        - всем выбранным помощникам (task.assistants_user_ids)
+
+        receiver_user_ids_override позволяет уведомлять только конкретных пользователей
+        (нужно для ensure_user_notifications, чтобы не создавать уведомления другим людям).
+        """
         now = now or datetime.utcnow()
 
         if task.task_type != "manager_assigned":
@@ -173,7 +182,6 @@ class NotificationService:
         if task.status not in {"pending", "overdue"}:
             return None
 
-        # Дедупликация по статусу: если pending -> overdue, пришлём ещё одно уведомление.
         event_key = f"task_accept_needed:{task.id}:{task.status}"
         title = "Нужно принять задачу"
         message = (
@@ -182,18 +190,35 @@ class NotificationService:
             else f'Задача просрочена — примите задачу «{task.title}».'
         )
 
-        return self.create_notification(
-            db,
-            user_id=task.owner_id,
-            event=NotificationEvent(
-                kind="task_status_changed",
-                event_key=event_key,
-                task_id=task.id,
-                title=title,
-                message=message,
-            ),
-            now=now,
-        )
+        if receiver_user_ids_override is not None:
+            receiver_user_ids = [uid for uid in receiver_user_ids_override if uid is not None]
+        else:
+            receiver_user_ids = [task.owner_id]
+            for user_id in getattr(task, "assistants_user_ids", []) or []:
+                if user_id is None:
+                    continue
+                if user_id == task.owner_id:
+                    continue
+                receiver_user_ids.append(user_id)
+
+        created_any: Optional[models.Notification] = None
+        for receiver_id in receiver_user_ids:
+            notification = self.create_notification(
+                db,
+                user_id=receiver_id,
+                event=NotificationEvent(
+                    kind="task_status_changed",
+                    event_key=event_key,
+                    task_id=task.id,
+                    title=title,
+                    message=message,
+                ),
+                now=now,
+            )
+            if notification is not None and created_any is None:
+                created_any = notification
+
+        return created_any
 
     def notify_deadline_soon(
         self,
@@ -452,12 +477,17 @@ class NotificationService:
         """
         now = now or datetime.utcnow()
 
-        # tasks owned by current_user (исполнитель)
+        # tasks owned by current_user (ответственный)
         tasks = db.query(models.Task).filter(models.Task.owner_id == current_user.id).all()
         for task in tasks:
-            self.notify_task_accept_needed(db, task=task, now=now)
+            self.notify_task_accept_needed(
+                db,
+                task=task,
+                now=now,
+                receiver_user_ids_override=[current_user.id],
+            )
 
-            # deadlines
+            # deadlines (как и раньше — только владельцу/ответственному)
             self.notify_deadline_soon(db, task=task, within_hours=24, now=now)
             self.notify_deadline_overdue(db, task=task, now=now)
 
@@ -476,6 +506,18 @@ class NotificationService:
                     ),
                     now=now,
                 )
+
+        # tasks where current_user is an assistant
+        # NOTE: JSON array containment operators can differ by DB/driver; use safe python filtering.
+        all_tasks = db.query(models.Task).all()
+        assistant_tasks = [task for task in all_tasks if current_user.id in (task.assistants_user_ids or [])]
+        for task in assistant_tasks:
+            self.notify_task_accept_needed(
+                db,
+                task=task,
+                now=now,
+                receiver_user_ids_override=[current_user.id],
+            )
 
         # task_accepted for creator:
         # Если manager_assigned задача находится в работе, значит её принял текущий owner_id.

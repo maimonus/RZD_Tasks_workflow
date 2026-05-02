@@ -48,6 +48,10 @@ class Task(Base):
     deadline = Column(DateTime, nullable=True)
     project_id = Column(Integer, ForeignKey('projects.id'), nullable=True)
     owner_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+
+    # Optional helpers/assistants (оnly notifications; accepting/reporting is still done by owner_id)
+    assistants_user_ids = Column(JSON, default=list, nullable=False)
+
     created_by_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     daily_approved_once = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -197,3 +201,31 @@ class Notification(Base):
 
     # relationships (optional)
     owner = relationship('User', foreign_keys=[user_id])
+
+
+class WorkloadSettings(Base):
+    __tablename__ = 'workload_settings'
+
+    # One-row settings table
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Total active tasks at/or below this number corresponds to "base" part of 100%
+    max_tasks_for_100 = Column(Integer, nullable=False, default=10)
+
+    # Critical tasks (priority >= critical_priority_threshold) count that corresponds to "extra" part of 100%
+    max_critical_tasks_for_100 = Column(Integer, nullable=False, default=3)
+
+    # Tasks with priority >= this value are considered critical for extra multiplier
+    critical_priority_threshold = Column(Integer, nullable=False, default=5)
+
+    # Base weight part for task priority scaling: weight = base_task_weight + priority_step * (priority - 1)
+    base_task_weight = Column(Integer, nullable=False, default=1)
+
+    # Linear step for priority scaling (priority is 1..5)
+    priority_weight_step = Column(Integer, nullable=False, default=0)
+
+    # Extra multiplier applied for critical tasks
+    critical_task_multiplier = Column(Integer, nullable=False, default=2)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

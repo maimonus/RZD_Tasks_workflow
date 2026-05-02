@@ -40,6 +40,7 @@ export interface Task {
   owner_id: number
   created_by_id: number
   daily_approved_once: boolean
+  assistants_user_ids: number[]
   owner?: User
   reports: TaskReport[]
   created_at: string
@@ -141,4 +142,16 @@ export interface Notification {
   task_id?: number
   created_at: string
   read_at?: string | null
+}
+
+export interface WorkloadSettings {
+  id: number
+  max_tasks_for_100: number
+  max_critical_tasks_for_100: number
+  critical_priority_threshold: number
+  base_task_weight: number
+  priority_weight_step: number
+  critical_task_multiplier: number
+  created_at: string
+  updated_at: string
 }

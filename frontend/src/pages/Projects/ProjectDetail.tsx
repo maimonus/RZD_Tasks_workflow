@@ -55,6 +55,11 @@ const ProjectDetailPage = () => {
   const [taskDeadline, setTaskDeadline] = useState('')
   const [taskOwnerId, setTaskOwnerId] = useState<number | ''>('')
   const [taskOwnerRoleFilter, setTaskOwnerRoleFilter] = useState<RoleName | 'all'>('all')
+
+  // assistants (необязательно): ответственный обязателен, помощники опциональны
+  const [assistantIds, setAssistantIds] = useState<number[]>([])
+  const [assistantPickId, setAssistantPickId] = useState<number | ''>('')
+
   const [isCreatingTask, setIsCreatingTask] = useState(false)
   const [rawTaskCreateError, setTaskCreateError] = useState<unknown>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
@@ -144,6 +149,21 @@ const ProjectDetailPage = () => {
     }))
   }, [taskOwnerOptions, taskOwnerRoleFilter])
 
+  const selectedTask = useMemo(() => {
+    if (!project || !selectedTaskId) return null
+    return project.tasks.find((task) => task.id === selectedTaskId) ?? null
+  }, [project, selectedTaskId])
+
+  useEffect(() => {
+    if (!selectedTask) {
+      setDeadlineEdit('')
+      setUpdatingDeadlineId(null)
+      return
+    }
+
+    setDeadlineEdit(isoToDateTimeLocal(selectedTask.deadline))
+  }, [selectedTask])
+
   if (!projectId) {
     return <Navigate to="/projects" replace />
   }
@@ -192,17 +212,7 @@ const ProjectDetailPage = () => {
       return new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
     }),
   }))
-  const selectedTask = selectedTaskId ? project.tasks.find((task) => task.id === selectedTaskId) ?? null : null
-
-  useEffect(() => {
-    if (!selectedTask) {
-      setDeadlineEdit('')
-      setUpdatingDeadlineId(null)
-      return
-    }
-
-    setDeadlineEdit(isoToDateTimeLocal(selectedTask.deadline))
-  }, [selectedTaskId])
+  
 
   const canUpdateDeadline = Boolean(selectedTask && user && canCreateTask)
 
@@ -313,6 +323,7 @@ const ProjectDetailPage = () => {
         deadline: taskDeadline ? new Date(taskDeadline).toISOString() : null,
         project_id: project.id,
         owner_id: taskOwnerId,
+        assistants_user_ids: assistantIds,
       })
 
       setProject((currentProject) =>
@@ -329,6 +340,8 @@ const ProjectDetailPage = () => {
       setTaskPriority(3)
       setTaskDeadline('')
       setTaskOwnerId(user?.id ?? users[0]?.id ?? '')
+      setAssistantIds([])
+      setAssistantPickId('')
     } catch (caughtError) {
       if (axios.isAxiosError(caughtError)) {
         setTaskCreateError(caughtError.response?.data?.detail ?? 'Не удалось создать задачу')
@@ -647,16 +660,60 @@ const ProjectDetailPage = () => {
                   </label>
 
                   <label className="block space-y-2">
-                    <span className="text-sm font-medium text-slate-700">Исполнитель</span>
+                    <span className="text-sm font-medium text-slate-700">Ответственный</span>
                     <SearchableSelect
                       label=""
-                      noResultsLabel="Исполнители не найдены"
-                      onChange={(nextValue) => setTaskOwnerId(nextValue)}
+                      noResultsLabel="Пользователи не найдены"
+                      onChange={(nextValue) => {
+                        setTaskOwnerId(nextValue)
+                        // если ответственный попал в помощники — уберём
+                        if (typeof nextValue === 'number') {
+                          setAssistantIds((current) => current.filter((id) => id !== nextValue))
+                        }
+                      }}
                       options={ownerOptions}
                       placeholder="Поиск по ФИО / email / роли"
                       value={taskOwnerId}
                     />
                   </label>
+
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-slate-700">Помощники (необязательно)</span>
+                    <SearchableSelect
+                      label=""
+                      noResultsLabel="Помощники не найдены"
+                      onChange={(nextValue) => {
+                        setAssistantPickId(nextValue)
+                        if (nextValue === '') return
+
+                        if (typeof taskOwnerId === 'number' && nextValue === taskOwnerId) return
+                        setAssistantIds((current) => (current.includes(nextValue) ? current : [...current, nextValue]))
+                        setAssistantPickId('')
+                      }}
+                      options={
+                        typeof taskOwnerId === 'number' ? ownerOptions.filter((opt) => opt.value !== taskOwnerId) : ownerOptions
+                      }
+                      placeholder="Добавить помощника"
+                      value={assistantPickId}
+                      emptyLabel="Выберите помощника"
+                    />
+                  </label>
+
+                  {assistantIds.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {assistantIds.map((id) => (
+                        <button
+                          key={id}
+                          type="button"
+                          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+                          onClick={() => setAssistantIds((current) => current.filter((x) => x !== id))}
+                          title="Удалить помощника"
+                        >
+                          {ownerLabelById.get(id) ?? `#${id}`} ×
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <label className="block space-y-2">
@@ -796,9 +853,14 @@ const ProjectDetailPage = () => {
                             <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700">
                               Приоритет: {formatTaskPriority(task.priority)}
                             </span>
-                            <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700">
-                              {task.owner?.full_name ?? ownerLabelById.get(task.owner_id) ?? 'Неизвестный пользователь'}
-                            </span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700">
+                  {task.owner?.full_name ?? ownerLabelById.get(task.owner_id) ?? 'Неизвестный пользователь'}
+                </span>
+                {task.assistants_user_ids?.length ? (
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-700">
+                    Помощники: {task.assistants_user_ids.length}
+                  </span>
+                ) : null}
                           </div>
 
                           <dl className="mt-4 grid gap-2 text-xs text-slate-500">
@@ -940,10 +1002,20 @@ const ProjectDetailPage = () => {
               </div>
 
               <div className="rounded-3xl bg-slate-50 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Исполнитель</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Ответственный</p>
                 <p className="mt-3 text-sm font-semibold text-slate-900">
                   {selectedTask.owner?.full_name ?? ownerLabelById.get(selectedTask.owner_id) ?? 'Неизвестный пользователь'}
                 </p>
+                {selectedTask.assistants_user_ids?.length ? (
+                  <p className="mt-2 truncate text-sm font-semibold text-slate-700">
+                    Помощники:{' '}
+                    {selectedTask.assistants_user_ids
+                      .map((id) => ownerLabelById.get(id)?.split(' (')[0] ?? `#${id}`)
+                      .join(', ')}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">Помощников нет</p>
+                )}
               </div>
 
               <div className="rounded-3xl bg-slate-50 p-4">

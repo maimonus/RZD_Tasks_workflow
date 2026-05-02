@@ -86,6 +86,27 @@ def create_task(payload: schemas.TaskCreate, db: Session = Depends(get_db), curr
 
     _validate_daily_task_assignment(payload.task_type, payload.owner_id, current_user)
 
+    assistants_ids = list(dict.fromkeys(payload.assistants_user_ids or []))  # preserve order, unique
+    # assistants don't make sense for daily tasks in this UI/logic
+    if payload.task_type == schemas.TaskType.DAILY and assistants_ids:
+        raise HTTPException(status_code=400, detail='Для ежедневных задач помощники не предусмотрены')
+
+    # assistants must exist
+    if assistants_ids:
+        # remove accidental owner duplication
+        assistants_ids = [user_id for user_id in assistants_ids if user_id != owner.id]
+
+    if assistants_ids:
+        found = (
+            db.query(models.User)
+            .filter(models.User.id.in_(assistants_ids))
+            .all()
+        )
+        found_ids = {u.id for u in found}
+        missing = [user_id for user_id in assistants_ids if user_id not in found_ids]
+        if missing:
+            raise HTTPException(status_code=404, detail=f'Помощник(и) не найдены: {missing[:5]}')
+
     if not is_managerial_role:
         if payload.task_type != schemas.TaskType.DAILY or payload.owner_id != current_user.id:
             raise HTTPException(
@@ -96,6 +117,7 @@ def create_task(payload: schemas.TaskCreate, db: Session = Depends(get_db), curr
         raise HTTPException(status_code=403, detail='Вы не можете назначать задачи этому пользователю')
 
     task_data = payload.model_dump()
+    task_data['assistants_user_ids'] = assistants_ids
     task_data['created_by_id'] = current_user.id
     task_data['daily_approved_once'] = False
     task = task_service.create_task(db, task_data)
@@ -124,6 +146,25 @@ def update_task(task_id: int, payload: schemas.TaskUpdate, db: Session = Depends
 
     is_managerial_role = can_manage_tasks(current_user)
     is_task_owner = current_user.id == task.owner_id
+
+    if 'assistants_user_ids' in update_data:
+        if not is_managerial_role:
+            raise HTTPException(status_code=403, detail='Только руководитель может менять помощников')
+
+        assistants_ids = list(dict.fromkeys(update_data['assistants_user_ids'] or []))
+        assistants_ids = [user_id for user_id in assistants_ids if user_id != task.owner_id]
+
+        if task.task_type == 'daily' and assistants_ids:
+            raise HTTPException(status_code=400, detail='Для ежедневных задач помощники не предусмотрены')
+
+        if assistants_ids:
+            found = db.query(models.User).filter(models.User.id.in_(assistants_ids)).all()
+            found_ids = {u.id for u in found}
+            missing = [user_id for user_id in assistants_ids if user_id not in found_ids]
+            if missing:
+                raise HTTPException(status_code=404, detail=f'Помощник(и) не найдены: {missing[:5]}')
+
+        update_data['assistants_user_ids'] = assistants_ids
 
     # Deadline update rules: deadline can be changed only by managerial roles.
     if 'deadline' in update_data:
@@ -194,14 +235,21 @@ def accept_task(task_id: int, db: Session = Depends(get_db), current_user: model
 
     updated = task_service.update_task(db, task, {'status': 'in_progress'})
 
-    # When task is accepted, mark related "accept needed" notifications as read.
-    notification_service.mark_task_notifications_read(
-        db,
-        current_user=current_user,
-        task_id=updated.id,
-    )
+    # When task is accepted, mark related "accept needed" notifications as read
+    # for all involved users: responsible + assistants.
+    involved_user_ids = {updated.owner_id, *(getattr(updated, "assistants_user_ids", []) or [])}
+    for user_id in involved_user_ids:
+        notify_user = db.get(models.User, user_id)
+        if not notify_user:
+            continue
 
-    # Notify task creator that executor accepted the task.
+        notification_service.mark_task_notifications_read(
+            db,
+            current_user=notify_user,
+            task_id=updated.id,
+        )
+
+    # Notify task creator that responsible accepted the task.
     notification_service.notify_task_accepted_for_creator(
         db,
         task=updated,

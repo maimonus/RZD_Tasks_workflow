@@ -14,7 +14,7 @@ from .config import BASE_DIR, UPLOADS_DIR, TASK_REPORT_UPLOAD_DIR
 from .system_logging import build_system_logger, parse_user_from_auth_header
 from .services.task_service import task_service
 from .services.notification_service import notification_service
-from .routes import auth, tasks, projects, users, workflow, roles, notifications
+from .routes import auth, tasks, projects, users, workflow, roles, notifications, settings
 
 models.Base.metadata.create_all(bind=engine)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -92,6 +92,7 @@ app.include_router(users)
 app.include_router(workflow)
 app.include_router(roles)
 app.include_router(notifications)
+app.include_router(settings)
 
 scheduler = BackgroundScheduler()
 

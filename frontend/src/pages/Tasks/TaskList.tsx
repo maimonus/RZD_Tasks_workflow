@@ -41,6 +41,9 @@ const TaskList = () => {
   const [priority, setPriority] = useState(3)
   const [deadline, setDeadline] = useState('')
   const [ownerId, setOwnerId] = useState<number | ''>('')
+  // помощники (опционально): multi-select собираем через SearchableSelect + список выбранных
+  const [assistantIds, setAssistantIds] = useState<number[]>([])
+  const [assistantPickId, setAssistantPickId] = useState<number | ''>('')
   const [ownerRoleFilter, setOwnerRoleFilter] = useState<RoleName | 'all'>('all')
   const [projectId, setProjectId] = useState<number | ''>('')
 
@@ -259,6 +262,8 @@ const TaskList = () => {
     setOwnerRoleFilter('all')
     setTaskType(canManageTasks ? 'manager_assigned' : 'daily')
     setOwnerId(user?.id ?? '')
+    setAssistantIds([])
+    setAssistantPickId('')
   }
 
   const resetReportForm = () => {
@@ -295,6 +300,7 @@ const TaskList = () => {
         project_id: projectId || null,
         owner_id: resolvedOwnerId,
         task_type: taskType,
+        assistants_user_ids: assistantIds,
       }
 
       const { data } = await api.post<Task>('/tasks', payload)
@@ -700,12 +706,14 @@ const TaskList = () => {
             {canManageTasks && taskType === 'manager_assigned' ? (
               <>
                 <label className="space-y-2">
-                  <span className="text-sm font-medium text-slate-700">Роль исполнителя</span>
+                  <span className="text-sm font-medium text-slate-700">Роль ответственного</span>
                   <select
                     className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-sky-400"
                     onChange={(event) => {
                       setOwnerRoleFilter(event.target.value as RoleName | 'all')
                       setOwnerId('')
+                      setAssistantIds([])
+                      setAssistantPickId('')
                     }}
                     value={ownerRoleFilter}
                   >
@@ -719,13 +727,63 @@ const TaskList = () => {
                 </label>
 
                 <SearchableSelect
-                  label="Исполнитель"
-                  noResultsLabel="Исполнители не найдены"
-                  onChange={(nextValue) => setOwnerId(nextValue)}
+                  label="Ответственный"
+                  noResultsLabel="Пользователи не найдены"
+                  onChange={(nextValue) => {
+                    setOwnerId(nextValue)
+                    // если вдруг ответственный попал в помощники — уберём
+                    if (typeof nextValue === 'number') {
+                      setAssistantIds((current) => current.filter((id) => id !== nextValue))
+                    }
+                  }}
                   options={ownerOptions}
                   placeholder="Поиск по ФИО, email или роли"
                   value={ownerId}
                 />
+
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Помощники (необязательно)</span>
+                  <SearchableSelect
+                    label=""
+                    noResultsLabel="Помощники не найдены"
+                    onChange={(nextValue) => {
+                      setAssistantPickId(nextValue)
+                      if (nextValue === '') return
+
+                      if (typeof ownerId === 'number' && nextValue === ownerId) return
+
+                      setAssistantIds((current) => (current.includes(nextValue) ? current : [...current, nextValue]))
+                      setAssistantPickId('')
+                    }}
+                    options={
+                      typeof ownerId === 'number'
+                        ? ownerOptions.filter((opt) => opt.value !== ownerId)
+                        : ownerOptions
+                    }
+                    placeholder="Добавить помощника"
+                    value={assistantPickId}
+                    emptyLabel="Выберите помощника"
+                  />
+                </label>
+
+                {assistantIds.length > 0 ? (
+                  <div className="mt-1">
+                    <div className="text-xs font-semibold text-slate-700">Выбрано:</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {assistantIds.map((id) => (
+                        <button
+                          key={id}
+                          type="button"
+                          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+                          onClick={() => setAssistantIds((current) => current.filter((x) => x !== id))}
+                          title="Удалить помощника"
+                        >
+                          {userNameById.get(id) ?? `#${id}`} ×
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </>
             ) : (
               <div className="rounded-3xl border border-emerald-100 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">
@@ -949,7 +1007,7 @@ const TaskList = () => {
                   </th>
                   <th className="px-4 py-3 font-semibold text-slate-600">
                     <button className="inline-flex items-center gap-2" onClick={() => handleSort('owner')} type="button">
-                      Исполнитель <span className="text-slate-400">{sortIndicator('owner')}</span>
+                      Ответственный <span className="text-slate-400">{sortIndicator('owner')}</span>
                     </button>
                   </th>
                   <th className="px-4 py-3 font-semibold text-slate-600">
@@ -1005,7 +1063,12 @@ const TaskList = () => {
                         </span>
                       </td>
                       <td className="px-4 py-4 text-slate-700">
-                        {task.owner?.full_name ?? userNameById.get(task.owner_id) ?? 'Неизвестный пользователь'}
+                        <div className="flex flex-col gap-1">
+                          <span>{task.owner?.full_name ?? userNameById.get(task.owner_id) ?? 'Неизвестный пользователь'}</span>
+                          {task.assistants_user_ids?.length ? (
+                            <span className="text-xs text-slate-500">Помощники: {task.assistants_user_ids.length}</span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-4 text-slate-700">
                         {projectNameById.get(task.project_id ?? -1) ?? 'Без проекта'}
@@ -1106,11 +1169,21 @@ const TaskList = () => {
                 <p className="mt-3 text-sm font-semibold text-slate-900">{taskTypeLabel(selectedTask.task_type)}</p>
               </div>
 
-              <div className="rounded-3xl bg-slate-50 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Исполнитель</p>
+              <div className="rounded-3xl bg-slate-50 p-4 min-w-0">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Ответственный</p>
                 <p className="mt-3 text-sm font-semibold text-slate-900">
                   {selectedTask.owner?.full_name ?? userNameById.get(selectedTask.owner_id) ?? 'Неизвестный пользователь'}
                 </p>
+                {selectedTask.assistants_user_ids?.length ? (
+                  <p className="mt-2 truncate text-sm font-semibold text-slate-700">
+                    Помощники:{' '}
+                    {selectedTask.assistants_user_ids
+                      .map((id) => userNameById.get(id) ?? `#${id}`)
+                      .join(', ')}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">Помощников нет</p>
+                )}
               </div>
 
               <div className="rounded-3xl bg-slate-50 p-4 min-w-0">

@@ -52,6 +52,12 @@ def apply_runtime_migrations(db: Session) -> None:
         db.execute(text('ALTER TABLE tasks ADD COLUMN daily_approved_once BOOLEAN NOT NULL DEFAULT 0'))
         migration_applied = True
 
+    if 'assistants_user_ids' not in task_columns:
+        db.execute(
+            text("ALTER TABLE tasks ADD COLUMN assistants_user_ids JSON NOT NULL DEFAULT '[]'")
+        )
+        migration_applied = True
+
     if migration_applied:
         db.commit()
 

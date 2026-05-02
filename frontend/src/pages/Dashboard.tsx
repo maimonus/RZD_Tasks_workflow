@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import axios from 'axios'
 
 import api from '../api/api'
-import type { Project, RoleName, Task, User } from '../types'
+import type { Project, RoleName, Task, User, WorkloadSettings } from '../types'
+import { useAuth } from '../store/authStore'
 import { projectStatusLabel, roleLabel, taskStatusLabel, taskTypeLabel } from '../utils/labels'
 import { formatIsoDateTimeRu } from '../utils/datetime'
 
@@ -262,6 +263,25 @@ const Dashboard = () => {
   const [error, setError] = useState<string | null>(null)
   const [activeFilter, setActiveFilter] = useState<InsightFilter>(ALL_FILTER)
   const [focusAction, setFocusAction] = useState<FocusAction | null>(null)
+  const { user } = useAuth()
+  const canManageTasks = ['Admin', 'FinancialDirector', 'DepartmentHead', 'Manager'].includes(user?.role.name as RoleName)
+
+  const [workloadSettings, setWorkloadSettings] = useState<WorkloadSettings | null>(null)
+  const [isWorkloadSettingsSaving, setIsWorkloadSettingsSaving] = useState(false)
+  const [workloadSettingsError, setWorkloadSettingsError] = useState<string | null>(null)
+  const [isWorkloadSettingsOpen, setIsWorkloadSettingsOpen] = useState(false)
+
+  const [workloadSettingsDraft, setWorkloadSettingsDraft] = useState<{
+    max_tasks_for_100: number
+    max_critical_tasks_for_100: number
+    critical_priority_threshold: number
+    base_task_weight: number
+    priority_weight_step: number
+    critical_task_multiplier: number
+  } | null>(null)
+
+  const [workloadSettingsDraftTouched, setWorkloadSettingsDraftTouched] = useState(false)
+
   const [isWorkloadExpanded, setIsWorkloadExpanded] = useState(false)
   const [isProductivityExpanded, setIsProductivityExpanded] = useState(false)
   const [userQuery, setUserQuery] = useState('')
@@ -272,14 +292,16 @@ const Dashboard = () => {
       setError(null)
 
       try {
-        const [tasksResponse, projectsResponse, usersResponse] = await Promise.all([
+        const [tasksResponse, projectsResponse, usersResponse, workloadSettingsResponse] = await Promise.all([
           api.get<Task[]>('/tasks'),
           api.get<Project[]>('/projects'),
           api.get<User[]>('/users'),
+          api.get<WorkloadSettings>('/settings/workload'),
         ])
         setTasks(tasksResponse.data)
         setProjects(projectsResponse.data)
         setUsers(usersResponse.data)
+        setWorkloadSettings(workloadSettingsResponse.data)
       } catch (caughtError) {
         if (axios.isAxiosError(caughtError)) {
           setError(caughtError.response?.data?.detail ?? 'Не удалось загрузить данные панели')
@@ -377,30 +399,73 @@ const Dashboard = () => {
   }, [activeTasks, userMap])
 
   const workloadByUser = useMemo(() => {
-    const counts = activeTasks.reduce<Record<number, number>>((accumulator, task) => {
+    const settings = workloadSettings
+    const baseTaskWeight = settings?.base_task_weight ?? 1
+    const priorityWeightStep = settings?.priority_weight_step ?? 0
+    const criticalPriorityThreshold = settings?.critical_priority_threshold ?? 5
+    const criticalTaskMultiplier = settings?.critical_task_multiplier ?? 2
+    const maxTasksFor100 = settings?.max_tasks_for_100 ?? 10
+    const maxCriticalTasksFor100 = settings?.max_critical_tasks_for_100 ?? 3
+
+    const getTaskWeight = (priority: number) => {
+      const weightBase = baseTaskWeight + priorityWeightStep * (priority - 1)
+      const isCritical = priority >= criticalPriorityThreshold
+      return isCritical ? weightBase * criticalTaskMultiplier : weightBase
+    }
+
+    // 100% calibration:
+    // - base part: max_tasks_for_100 tasks with priority=1
+    // - critical part: max_critical_tasks_for_100 tasks with priority=critical_priority_threshold
+    const maxScoreBase = maxTasksFor100 * (baseTaskWeight + priorityWeightStep * (1 - 1))
+    const maxScoreCritical =
+      maxCriticalTasksFor100 * (baseTaskWeight + priorityWeightStep * (criticalPriorityThreshold - 1)) * criticalTaskMultiplier
+    const maxScore = maxScoreBase + maxScoreCritical
+
+    const percentFromScore = (score: number) => {
+      if (!Number.isFinite(score) || score <= 0) return 0
+      if (maxScore <= 0) return 0
+      return Math.max(0, Math.min(100, (score / maxScore) * 100))
+    }
+
+    const buckets = activeTasks.reduce<
+      Record<
+        number,
+        {
+          activeCount: number
+          totalCount: number
+          completed: number
+          score: number
+        }
+      >
+    >((acc, task) => {
+      const ownerId = task.owner_id
+      const existing = acc[ownerId] ?? { activeCount: 0, totalCount: 0, completed: 0, score: 0 }
+      existing.totalCount += 1
       if (task.status === 'completed') {
-        return accumulator
+        existing.completed += 1
+      } else {
+        existing.activeCount += 1
+        existing.score += getTaskWeight(task.priority)
       }
-      accumulator[task.owner_id] = (accumulator[task.owner_id] ?? 0) + 1
-      return accumulator
+      acc[ownerId] = existing
+      return acc
     }, {})
 
-    return Object.entries(counts)
-      .map(([ownerId, count]) => {
+    return Object.entries(buckets)
+      .map(([ownerId, b]) => {
         const owner = userMap.get(Number(ownerId))
-        const ownerTasks = activeTasks.filter((task) => task.owner_id === Number(ownerId))
-        const completed = ownerTasks.filter((task) => task.status === 'completed').length
         return {
           id: Number(ownerId),
           name: owner?.full_name ?? `Сотрудник #${ownerId}`,
           role: owner?.role.name,
-          activeCount: count,
-          totalCount: ownerTasks.length,
-          completed,
+          activeCount: b.activeCount,
+          totalCount: b.totalCount,
+          completed: b.completed,
+          workloadPercent: percentFromScore(b.score),
         }
       })
-      .sort((left, right) => right.activeCount - left.activeCount)
-  }, [activeTasks, userMap])
+      .sort((left, right) => right.workloadPercent - left.workloadPercent || right.activeCount - left.activeCount)
+  }, [activeTasks, userMap, workloadSettings])
 
   const productivityByUser = useMemo(() => {
     const stats = activeTasks.reduce<Record<number, { completed: number; overdue: number; total: number }>>((accumulator, task) => {
@@ -613,6 +678,60 @@ const Dashboard = () => {
     })
   }
 
+  const openWorkloadSettings = () => {
+    if (!workloadSettings) return
+    setWorkloadSettingsDraft({
+      max_tasks_for_100: workloadSettings.max_tasks_for_100,
+      max_critical_tasks_for_100: workloadSettings.max_critical_tasks_for_100,
+      critical_priority_threshold: workloadSettings.critical_priority_threshold,
+      base_task_weight: workloadSettings.base_task_weight,
+      priority_weight_step: workloadSettings.priority_weight_step,
+      critical_task_multiplier: workloadSettings.critical_task_multiplier,
+    })
+    setWorkloadSettingsDraftTouched(false)
+    setWorkloadSettingsError(null)
+    setIsWorkloadSettingsOpen(true)
+  }
+
+  const closeWorkloadSettings = () => {
+    setIsWorkloadSettingsOpen(false)
+    setWorkloadSettingsDraftTouched(false)
+    setWorkloadSettingsError(null)
+  }
+
+  const updateWorkloadSettingsDraft = <K extends keyof NonNullable<typeof workloadSettingsDraft>>(
+    key: K,
+    value: NonNullable<typeof workloadSettingsDraft>[K],
+  ) => {
+    setWorkloadSettingsDraft((prev) => {
+      if (!prev) return prev
+      return { ...prev, [key]: value }
+    })
+    setWorkloadSettingsDraftTouched(true)
+  }
+
+  const saveWorkloadSettings = async () => {
+    if (!workloadSettingsDraft) return
+
+    setIsWorkloadSettingsSaving(true)
+    setWorkloadSettingsError(null)
+
+    try {
+      const { data } = await api.patch<WorkloadSettings>('/settings/workload', workloadSettingsDraft)
+      setWorkloadSettings(data)
+      setIsWorkloadSettingsOpen(false)
+      setWorkloadSettingsDraftTouched(false)
+    } catch (caughtError) {
+      if (axios.isAxiosError(caughtError)) {
+        setWorkloadSettingsError(caughtError.response?.data?.detail ?? 'Не удалось сохранить настройки')
+      } else {
+        setWorkloadSettingsError('Не удалось сохранить настройки')
+      }
+    } finally {
+      setIsWorkloadSettingsSaving(false)
+    }
+  }
+
   const filteredTasks = useMemo(() => {
     if (activeFilter.kind === 'all') {
       return activeTasks
@@ -677,8 +796,8 @@ const Dashboard = () => {
     return <div className="rounded-[2rem] bg-white p-8 text-sm text-slate-500 shadow-sm">Загружаем аналитику...</div>
   }
 
-  return (
-    <div className="space-y-6 pb-8 xl:pr-[430px]">
+return (
+    <div className="space-y-6 pb-8 xl:pr-[424px]">
       <section
         className="overflow-hidden rounded-[2.25rem] border border-[rgba(255,255,255,0.14)] p-8 text-white shadow-[0_24px_60px_rgba(94,20,26,0.22)]"
         style={{
@@ -811,7 +930,7 @@ const Dashboard = () => {
       </section>
 
       <section className="grid gap-6">
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm xl:fixed xl:bottom-6 xl:right-6 xl:top-24 xl:z-30 xl:w-[400px] xl:overflow-y-auto xl:p-5">
+<div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm xl:fixed xl:bottom-6 xl:right-6 xl:top-28 xl:z-50 xl:w-[400px] xl:overflow-y-auto xl:p-5">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-slate-900">Фокус панели</h2>
@@ -961,54 +1080,269 @@ const Dashboard = () => {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-slate-900">Тренд за 6 месяцев</h2>
-
-          <div className="mt-6 space-y-4">
-            {recentTrend.map((item) => (
-              <div key={item.key} className="rounded-3xl bg-slate-50 p-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <span className="text-sm font-semibold text-slate-900">{item.label}</span>
-                  <span className="text-xs text-slate-500">
-                    Создано {item.created} • Завершено {item.completed}
-                  </span>
-                </div>
-                <div className="mt-4 space-y-3">
-                  <div>
-                    <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
-                      <span>Создано</span>
-                      <span>{item.created}</span>
-                    </div>
-                    <div className="h-3 overflow-hidden rounded-full bg-white">
-                      <div
-                        className="h-full rounded-full"
-                        style={{ backgroundColor: '#d22630', width: `${(item.created / trendMax) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
-                      <span>Завершено</span>
-                      <span>{item.completed}</span>
-                    </div>
-                    <div className="h-3 overflow-hidden rounded-full bg-white">
-                      <div
-                        className="h-full rounded-full"
-                        style={{ backgroundColor: '#3d8c52', width: `${(item.completed / trendMax) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <h2 className="text-xl font-semibold text-slate-900">Нагрузка сотрудников</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-semibold text-slate-900">Нагрузка сотрудников</h2>
+              {canManageTasks ? (
+                <button
+                  type="button"
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-[rgba(210,38,48,0.35)] hover:bg-slate-50 disabled:opacity-50"
+                  onClick={openWorkloadSettings}
+                  disabled={!workloadSettings || isWorkloadSettingsSaving}
+                >
+                  {isWorkloadSettingsSaving ? 'Сохранение…' : 'Настройки'}
+                </button>
+              ) : null}
+            </div>
+
+            {canManageTasks && isWorkloadSettingsOpen ? (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center">
+                <div
+                  className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px]"
+                  onClick={closeWorkloadSettings}
+                  role="button"
+                  tabIndex={0}
+                />
+                <div className="relative w-full max-w-[560px] rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-xl font-semibold text-slate-900">Настройки нагрузки сотрудников</h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        100% соответствует заданному администратором “эталонному” уровню.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                      onClick={closeWorkloadSettings}
+                      aria-label="Закрыть"
+                    >
+                      Закрыть
+                    </button>
+                  </div>
+
+                  {workloadSettingsError ? (
+                    <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{workloadSettingsError}</div>
+                  ) : null}
+
+                  <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                    <p className="text-xs font-semibold text-blue-900">💡 Как работает расчет нагрузки:</p>
+                    <p className="mt-2 text-xs text-blue-800">
+                      Нагрузка = (количество обычных задач ÷ база) × 50% + (критичные задачи × множитель ÷ база критичных) × 50%
+                    </p>
+                  </div>
+
+                  <div className="mt-5 space-y-5">
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Максимальное количество обычных задач для 100%</p>
+                          <p className="mt-1 text-xs text-slate-600">Количество задач с нормальным приоритетом, при котором нагрузка = 100%</p>
+                        </div>
+                        <p className="text-sm font-semibold text-slate-700">{workloadSettingsDraft?.max_tasks_for_100 ?? 0}</p>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={50}
+                        step={1}
+                        className="mt-3 w-full"
+                        value={workloadSettingsDraft?.max_tasks_for_100 ?? 0}
+                        onChange={(e) => updateWorkloadSettingsDraft('max_tasks_for_100', Number(e.target.value))}
+                      />
+                      <div className="mt-3 flex gap-3">
+                        <label className="block flex-1">
+                          <span className="text-xs font-semibold text-slate-500">Вручную</span>
+                          <input
+                            type="number"
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none"
+                            value={workloadSettingsDraft?.max_tasks_for_100 ?? 0}
+                            min={1}
+                            onChange={(e) => updateWorkloadSettingsDraft('max_tasks_for_100', Math.max(1, Number(e.target.value)))}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Максимум критичных задач для 100%</p>
+                          <p className="mt-1 text-xs text-slate-600">Количество критичных задач, при котором их нагрузка = 100%</p>
+                        </div>
+                        <p className="text-sm font-semibold text-slate-700">{workloadSettingsDraft?.max_critical_tasks_for_100 ?? 0}</p>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={20}
+                        step={1}
+                        className="mt-3 w-full"
+                        value={workloadSettingsDraft?.max_critical_tasks_for_100 ?? 0}
+                        onChange={(e) => updateWorkloadSettingsDraft('max_critical_tasks_for_100', Number(e.target.value))}
+                      />
+                      <div className="mt-3 flex gap-3">
+                        <label className="block flex-1">
+                          <span className="text-xs font-semibold text-slate-500">Вручную</span>
+                          <input
+                            type="number"
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none"
+                            value={workloadSettingsDraft?.max_critical_tasks_for_100 ?? 0}
+                            min={1}
+                            onChange={(e) => updateWorkloadSettingsDraft('max_critical_tasks_for_100', Math.max(1, Number(e.target.value)))}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-900">Порог “критичности” (priority ≥ )</p>
+                          <p className="text-sm font-semibold text-slate-700">{workloadSettingsDraft?.critical_priority_threshold ?? 0}</p>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={5}
+                          step={1}
+                          className="mt-2 w-full"
+                          value={workloadSettingsDraft?.critical_priority_threshold ?? 1}
+onChange={(e) => updateWorkloadSettingsDraft('critical_priority_threshold', Number(e.target.value))}
+                        />
+                        <input
+                          type="number"
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none"
+                          value={workloadSettingsDraft?.critical_priority_threshold ?? 1}
+                          min={1}
+                          max={5}
+                          onChange={(e) => updateWorkloadSettingsDraft('critical_priority_threshold', Number(e.target.value) as any)}
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-900">Множитель критичных</p>
+                          <p className="text-sm font-semibold text-slate-700">{workloadSettingsDraft?.critical_task_multiplier ?? 1}</p>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={5}
+                          step={1}
+                          className="mt-2 w-full"
+                          value={workloadSettingsDraft?.critical_task_multiplier ?? 1}
+                          onChange={(e) => updateWorkloadSettingsDraft('critical_task_multiplier', Number(e.target.value))}
+                        />
+                        <input
+                          type="number"
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none"
+                          value={workloadSettingsDraft?.critical_task_multiplier ?? 1}
+                          min={1}
+                          max={5}
+                          onChange={(e) => updateWorkloadSettingsDraft('critical_task_multiplier', Number(e.target.value))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-900">Вес priority=1</p>
+                          <p className="text-sm font-semibold text-slate-700">{workloadSettingsDraft?.base_task_weight ?? 0}</p>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={10}
+                          step={1}
+                          className="mt-2 w-full"
+                          value={workloadSettingsDraft?.base_task_weight ?? 0}
+                          onChange={(e) => updateWorkloadSettingsDraft('base_task_weight', Number(e.target.value))}
+                        />
+                        <input
+                          type="number"
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none"
+                          value={workloadSettingsDraft?.base_task_weight ?? 0}
+                          min={0}
+                          onChange={(e) => updateWorkloadSettingsDraft('base_task_weight', Number(e.target.value))}
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-900">Шаг веса (priority растёт)</p>
+                          <p className="text-sm font-semibold text-slate-700">{workloadSettingsDraft?.priority_weight_step ?? 0}</p>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={5}
+                          step={1}
+                          className="mt-2 w-full"
+                          value={workloadSettingsDraft?.priority_weight_step ?? 0}
+                          onChange={(e) => updateWorkloadSettingsDraft('priority_weight_step', Number(e.target.value))}
+                        />
+                        <input
+                          type="number"
+                          className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none"
+                          value={workloadSettingsDraft?.priority_weight_step ?? 0}
+                          min={0}
+                          max={5}
+                          onChange={(e) => updateWorkloadSettingsDraft('priority_weight_step', Number(e.target.value))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                    <p className="text-xs font-semibold text-amber-900">📊 Примеры расчета:</p>
+                    <div className="mt-3 space-y-2 text-xs text-amber-800">
+                      <p><strong>Сценарий 1:</strong> Сотрудник с 10 обычными задачами (priority 1) = 100% (база)</p>
+                      <p><strong>Сценарий 2:</strong> Сотрудник с 3 критичными задачами (priority 5) = 100% (критичная база)</p>
+                      <p><strong>Сценарий 3:</strong> Сотрудник с 5 обычными + 1 критичной = ~50% + ~17% = ~67%</p>
+                      <p><strong>Совет:</strong> Начните с базовых значений (10/3) и мониторьте нагрузку в течение недели, затем оптимизируйте.</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      onClick={() => {
+                        if (!workloadSettings) return
+                        setWorkloadSettingsDraft({
+                          max_tasks_for_100: workloadSettings.max_tasks_for_100,
+                          max_critical_tasks_for_100: workloadSettings.max_critical_tasks_for_100,
+                          critical_priority_threshold: workloadSettings.critical_priority_threshold,
+                          base_task_weight: workloadSettings.base_task_weight,
+                          priority_weight_step: workloadSettings.priority_weight_step,
+                          critical_task_multiplier: workloadSettings.critical_task_multiplier,
+                        })
+                        setWorkloadSettingsDraftTouched(false)
+                        setWorkloadSettingsError(null)
+                      }}
+                      disabled={!workloadSettingsDraftTouched || isWorkloadSettingsSaving}
+                    >
+                      Сбросить
+                    </button>
+
+                    <button
+                      type="button"
+                      className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                      onClick={saveWorkloadSettings}
+                      disabled={!workloadSettingsDraftTouched || isWorkloadSettingsSaving}
+                    >
+                      {isWorkloadSettingsSaving ? 'Сохранение…' : 'Сохранить'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             <label className="w-full sm:max-w-[340px]">
               <span className="sr-only">Поиск по пользователям</span>
@@ -1044,14 +1378,16 @@ const Dashboard = () => {
                       <p className="mt-1 text-xs text-slate-500">{item.role ? roleLabel(item.role) : 'Роль не определена'}</p>
                     </div>
                     <div className="relative h-[76px] w-[76px] shrink-0">
-                      <MiniRing color="#d22630" total={Math.max(item.totalCount, 1)} value={item.activeCount} />
+                      <MiniRing color="#d22630" total={100} value={item.workloadPercent} />
                       <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-slate-900">
-                        {item.activeCount}
+                        {formatPercent(item.workloadPercent)}
                       </div>
                     </div>
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl bg-white px-3 py-3 text-sm text-slate-700">Всего задач: {item.totalCount}</div>
+                    <div className="rounded-2xl bg-white px-3 py-3 text-sm text-slate-700">
+                      Загруженность: {formatPercent(item.workloadPercent)}
+                    </div>
                     <div className="rounded-2xl bg-white px-3 py-3 text-sm text-emerald-700">Завершено: {item.completed}</div>
                   </div>
                 </button>
@@ -1128,6 +1464,51 @@ const Dashboard = () => {
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-xl font-semibold text-slate-900">Аналитика по ролям</h2>
+
+          <div className="mt-6 w-full rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-900">Тренд за 6 месяцев</h3>
+
+            <div className="mt-6 space-y-4">
+              {recentTrend.map((item) => (
+                <div key={item.key} className="rounded-3xl bg-slate-50 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm font-semibold text-slate-900">{item.label}</span>
+                    <span className="text-xs text-slate-500">
+                      Создано {item.created} • Завершено {item.completed}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+                        <span>Создано</span>
+                        <span>{item.created}</span>
+                      </div>
+                      <div className="h-3 overflow-hidden rounded-full bg-white">
+                        <div
+                          className="h-full rounded-full"
+                          style={{ backgroundColor: '#d22630', width: `${(item.created / trendMax) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+                        <span>Завершено</span>
+                        <span>{item.completed}</span>
+                      </div>
+                      <div className="h-3 overflow-hidden rounded-full bg-white">
+                        <div
+                          className="h-full rounded-full"
+                          style={{ backgroundColor: '#3d8c52', width: `${(item.completed / trendMax) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div className="mt-6 overflow-hidden rounded-3xl border border-slate-200">
             <table className="min-w-full divide-y divide-slate-200 text-left text-sm">

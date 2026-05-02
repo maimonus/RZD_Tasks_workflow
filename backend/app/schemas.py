@@ -58,6 +58,8 @@ class TaskCreate(BaseModel):
     deadline: Optional[datetime]
     project_id: Optional[int]
     owner_id: int
+    # helpers/assistants are optional: can be empty list
+    assistants_user_ids: List[int] = Field(default_factory=list)
     task_type: TaskType = TaskType.MANAGER_ASSIGNED
 
 class TaskUpdate(BaseModel):
@@ -68,6 +70,7 @@ class TaskUpdate(BaseModel):
     deadline: Optional[datetime] = None
     owner_id: Optional[int] = None
     project_id: Optional[int] = None
+    assistants_user_ids: Optional[List[int]] = None
 
 class TaskReportSchema(BaseModel):
     id: int
@@ -95,6 +98,7 @@ class TaskSchema(BaseModel):
     owner_id: int
     created_by_id: int
     daily_approved_once: bool
+    assistants_user_ids: List[int] = Field(default_factory=list)
     owner: Optional[UserSchema] = None
     reports: List[TaskReportSchema] = Field(default_factory=list)
     created_at: datetime
@@ -259,3 +263,41 @@ class NotificationSchema(BaseModel):
 
 class MarkNotificationReadPayload(BaseModel):
     read_at: Optional[datetime] = None
+
+
+class WorkloadSettingsSchema(BaseModel):
+    id: int
+
+    # base part of 100% (how many "normal" active tasks correspond to 100% base)
+    max_tasks_for_100: int
+
+    # extra part of 100% (how many "critical" tasks correspond to 100% extra)
+    max_critical_tasks_for_100: int
+
+    # priority >= this threshold considered "critical"
+    critical_priority_threshold: int
+
+    # base task weight formula component
+    base_task_weight: int
+
+    # linear scaling component for priority weight
+    priority_weight_step: int
+
+    # extra multiplier for critical tasks
+    critical_task_multiplier: int
+
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {
+        'from_attributes': True,
+    }
+
+
+class WorkloadSettingsUpdatePayload(BaseModel):
+    max_tasks_for_100: int = Field(ge=0)
+    max_critical_tasks_for_100: int = Field(ge=0)
+    critical_priority_threshold: int = Field(ge=1, le=5)
+    base_task_weight: int = Field(ge=0)
+    priority_weight_step: int = Field(ge=0)
+    critical_task_multiplier: int = Field(ge=1)
