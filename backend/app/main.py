@@ -7,7 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .auth import auth_service
-from .db import engine, SessionLocal
+from .db import engine, SessionLocal, wait_for_postgres_ready
 from . import models
 from .bootstrap import apply_runtime_migrations, bootstrap_defaults
 from .config import BASE_DIR, UPLOADS_DIR, TASK_REPORT_UPLOAD_DIR
@@ -16,6 +16,7 @@ from .services.task_service import task_service
 from .services.notification_service import notification_service
 from .routes import auth, tasks, projects, users, workflow, roles, notifications, settings
 
+wait_for_postgres_ready(timeout_seconds=60)
 models.Base.metadata.create_all(bind=engine)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 TASK_REPORT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
