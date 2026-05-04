@@ -21,7 +21,7 @@ services:
     depends_on:
       - db
     environment:
-      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/finance_system
+      - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/finance_system
       - JWT_SECRET=supersecretjwtkey
       - JWT_EXPIRES_MINUTES=120
   frontend:
