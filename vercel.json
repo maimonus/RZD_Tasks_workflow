@@ -1,5 +1,15 @@
 {
   "version": 2,
-  "buildCommand": "npm install && npm --prefix ../frontend run build",
-  "outputDirectory": "../frontend/dist"
+  "experimentalServices": {
+    "frontend": {
+      "entrypoint": "frontend",
+      "routePrefix": "/",
+      "buildCommand": "npm install && npm run build",
+      "outputDirectory": "dist"
+    },
+    "backend": {
+      "entrypoint": "backend",
+      "routePrefix": "/backend"
+    }
+  }
 }
