@@ -2,10 +2,24 @@ import axios from 'axios'
 
 export const AUTH_TOKEN_STORAGE_KEY = 'finance_auth_token'
 
+// Определяем baseURL на основе окружения
+const getBaseURL = () => {
+  // Сначала проверяем явно установленную переменную окружения
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL
+  }
+
+  // Если DEV режим, используем localhost:8000
+  if (import.meta.env.DEV) {
+    return 'http://localhost:8000'
+  }
+
+  // Для production режима, используем относительный путь через proxy
+  return '/backend'
+}
+
 const api = axios.create({
-  baseURL:
-    (import.meta as any).env.VITE_API_BASE_URL ||
-    (import.meta.env.DEV ? 'http://localhost:8000' : '/backend'),
+  baseURL: getBaseURL(),
   headers: {
     'Content-Type': 'application/json',
   },

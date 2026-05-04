@@ -1,14 +1,17 @@
 {
   "version": 2,
-  "experimentalServices": {
-    "frontend": {
-      "entrypoint": "frontend",
-      "routePrefix": "/",
-      "buildCommand": "npm install && npm run build"
-    },
-    "backend": {
-      "entrypoint": "backend",
-      "routePrefix": "/backend"
+  "buildCommand": "npm install && npm run build",
+  "outputDirectory": "dist",
+  "public": false,
+  "env": {
+    "VITE_API_BASE_URL": "@VITE_API_BASE_URL"
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
-  }
+  ]
 }
+
+
