@@ -6,16 +6,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 
 raw_database_url = os.getenv('DATABASE_URL', '').strip()
 if raw_database_url:
-    # Normalize postgres driver to one that works on Vercel builds without native extensions/wheels.
-    # Vercel currently uses CPython 3.14, which breaks psycopg[binary] wheels.
-    if raw_database_url.startswith('postgresql+psycopg2://'):
-        DATABASE_URL = raw_database_url.replace('postgresql+psycopg2://', 'postgresql+pg8000://', 1)
-    elif raw_database_url.startswith('postgresql+psycopg://'):
-        DATABASE_URL = raw_database_url.replace('postgresql+psycopg://', 'postgresql+pg8000://', 1)
-    elif raw_database_url.startswith('postgresql://'):
-        DATABASE_URL = raw_database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
-    else:
-        DATABASE_URL = raw_database_url
+    DATABASE_URL = raw_database_url
 else:
     DATABASE_URL = 'sqlite:///./finance_system.db'
 
