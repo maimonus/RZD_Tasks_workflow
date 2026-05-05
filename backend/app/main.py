@@ -88,14 +88,14 @@ class SystemLoggingMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SystemLoggingMiddleware)
 
-app.include_router(auth)
-app.include_router(tasks)
-app.include_router(projects)
-app.include_router(users)
-app.include_router(workflow)
-app.include_router(roles)
-app.include_router(notifications)
-app.include_router(settings)
+app.include_router(auth, prefix='/api')
+app.include_router(tasks, prefix='/api')
+app.include_router(projects, prefix='/api')
+app.include_router(users, prefix='/api')
+app.include_router(workflow, prefix='/api')
+app.include_router(roles, prefix='/api')
+app.include_router(notifications, prefix='/api')
+app.include_router(settings, prefix='/api')
 
 scheduler = BackgroundScheduler()
 
