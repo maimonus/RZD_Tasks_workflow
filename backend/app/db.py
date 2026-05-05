@@ -8,7 +8,15 @@ from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from .config import DATABASE_URL, SQLITE_CONNECT_ARGS
 
-engine = create_engine(DATABASE_URL, connect_args=SQLITE_CONNECT_ARGS, future=True, echo=True)
+# Create engine with psycopg2 (sync driver) - pool_pre_ping prevents stale connections
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=SQLITE_CONNECT_ARGS,
+    future=True,
+    echo=True,
+    pool_pre_ping=True,  # Validates connection before using it
+    pool_recycle=3600,   # Recycle connections after 1 hour
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, future=True)
 Base = declarative_base()
 
