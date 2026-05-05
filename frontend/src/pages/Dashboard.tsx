@@ -1045,7 +1045,7 @@ return (
                           ) : null}
                         </div>
                         <span
-                          className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold text-white"
+                          className="shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold text-white min-w-fit"
                           style={{ backgroundColor: STATUS_COLORS[task.status] ?? '#7a6b66' }}
                         >
                           {taskStatusLabel(task.status)}
@@ -1054,7 +1054,9 @@ return (
                     </button>
 
                     <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                      <span className="rounded-full bg-white px-3 py-1 font-semibold">{taskTypeLabel(task.task_type)}</span>
+                      <span className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold min-w-fit" style={{ backgroundColor: TYPE_COLORS[task.task_type] ?? '#7a6b66' }}>
+                        {taskTypeLabel(task.task_type)}
+                      </span>
                       <button
                         className="rounded-full bg-white px-3 py-1 font-semibold transition hover:bg-slate-100"
                         onClick={() => openEmployeeMenu(task.owner_id, ownerName)}
@@ -1625,11 +1627,11 @@ onChange={(e) => updateWorkloadSettingsDraft('critical_priority_threshold', Numb
                         <p className="mt-1 text-xs text-slate-500">{task.owner}</p>
                       </div>
                       <span
-                        className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold text-white"
-                        style={{ backgroundColor: STATUS_COLORS[task.status] ?? '#7a6b66' }}
-                      >
-                        {taskStatusLabel(task.status)}
-                      </span>
+                          className="shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold text-white min-w-fit"
+                          style={{ backgroundColor: STATUS_COLORS[task.status] ?? '#7a6b66' }}
+                        >
+                          {taskStatusLabel(task.status)}
+                        </span>
                     </div>
                     <p className="mt-3 text-sm text-slate-700">{formatIsoDateTimeRu(task.deadline.toISOString())}</p>
                   </button>

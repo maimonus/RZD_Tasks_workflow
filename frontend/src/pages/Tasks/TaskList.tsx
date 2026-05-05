@@ -1049,16 +1049,16 @@ const TaskList = () => {
                           <div className="mt-1 max-w-md text-xs text-slate-500">{task.description}</div>
                         ) : null}
                       </td>
-                      <td className="px-4 py-4">
+  <td className="px-4 py-4">
                         <div className="space-y-2">
-                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                          <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-semibold text-slate-700 min-w-fit">
                             {taskTypeLabel(task.task_type)}
                           </span>
                         </div>
                       </td>
                       <td className="px-4 py-4 text-slate-700">{task.priority}</td>
                       <td className="px-4 py-4">
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700">
+                        <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-700 min-w-fit">
                           {taskStatusLabel(task.status)}
                         </span>
                       </td>
