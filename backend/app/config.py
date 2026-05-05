@@ -7,6 +7,8 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 raw_database_url = os.getenv('DATABASE_URL', '').strip()
 if raw_database_url:
     DATABASE_URL = raw_database_url
+    # Force sync PostgreSQL dialect for Render compatibility
+    DATABASE_URL = DATABASE_URL.replace('postgresql+asyncpg://', 'postgresql://').replace('+asyncpg', '')
 else:
     DATABASE_URL = 'sqlite:///./finance_system.db'
 
