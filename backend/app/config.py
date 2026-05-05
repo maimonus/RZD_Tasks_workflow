@@ -5,13 +5,23 @@ from datetime import timedelta
 BASE_DIR = Path(__file__).resolve().parents[1]
 
 raw_database_url = os.getenv('DATABASE_URL', '').strip()
+
+# Validate and configure DATABASE_URL
 if raw_database_url:
-    DATABASE_URL = raw_database_url
-    # Use psycopg2 (sync driver) instead of asyncpg for synchronous code
-    DATABASE_URL = (DATABASE_URL
-                   .replace('postgresql+asyncpg://', 'postgresql+psycopg2://')
-                   .replace('postgresql://', 'postgresql+psycopg2://'))
+    # Check for placeholder or invalid values
+    if 'hostname' in raw_database_url.lower() or raw_database_url == 'postgresql://':
+        print(f"WARNING: DATABASE_URL contains invalid placeholder value: {raw_database_url}")
+        print("Using SQLite fallback for local development.")
+        DATABASE_URL = 'sqlite:///./finance_system.db'
+    else:
+        DATABASE_URL = raw_database_url
+        # Convert asyncpg to psycopg2 (sync driver) for synchronous code
+        if 'postgresql' in DATABASE_URL.lower():
+            DATABASE_URL = (DATABASE_URL
+                           .replace('postgresql+asyncpg://', 'postgresql+psycopg2://')
+                           .replace('postgresql://', 'postgresql+psycopg2://'))
 else:
+    # No DATABASE_URL provided, use SQLite for local development
     DATABASE_URL = 'sqlite:///./finance_system.db'
 
 SQLITE_CONNECT_ARGS = {'check_same_thread': False} if DATABASE_URL.startswith('sqlite') else {}
